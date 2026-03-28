@@ -326,7 +326,7 @@ class Qwen3DecoderLayer(nn.Module):
         # Attention 
         hidden_states_full = residual + hidden_states_attn
 
-        # TODO the 34 layer issue
+        #TODO the 34 layer issue
         # Adaptor 
         if adaptor[self.layer_index] is not None and residual is not None:
             hidden_states_adaptor = residual + adaptor[self.layer_index](residual)
@@ -340,11 +340,13 @@ class Qwen3DecoderLayer(nn.Module):
         else:
             hidden_states = hidden_states_full
 
+        #TODO mlp jump
         # Fully Connected
         residual = hidden_states
         hidden_states = self.post_attention_layernorm(hidden_states)
-        hidden_states = self.mlp(hidden_states)
-        hidden_states = residual + hidden_states
+        
+        mlp_out = self.mlp(hidden_states)
+        hidden_states = residual + flag * mlp_out
 
         outputs = (hidden_states,)
         if output_attentions:

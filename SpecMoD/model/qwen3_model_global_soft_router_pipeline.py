@@ -327,14 +327,17 @@ class Qwen3DecoderLayer(nn.Module):
         hidden_states = residual + flag * hidden_states_attn
 
         #  the 34 layer issue
-        # TODO cut
+
+        # TODO cut mlp！！！！！
 
         # Fully Connected
         residual = hidden_states
         hidden_states = self.post_attention_layernorm(hidden_states)
         #! here the dtype goes wrong
-        hidden_states = self.mlp(hidden_states)
-        hidden_states = residual + hidden_states
+
+        #TODO mlp
+        mlp_out = self.mlp(hidden_states)
+        hidden_states = residual + flag * mlp_out
 
         outputs = (hidden_states,)
         if output_attentions:
