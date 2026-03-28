@@ -30,7 +30,7 @@ def load_questions(question_file: str, begin=None, end=None):
 
 
 def main(args):
-    from model.qwen3_model_global_soft_router_pipeline import  Spec_Qwen3ForCausalLM
+    from model.qwen3_model_global_router_pipeline import  Spec_Qwen3ForCausalLM
     from model.utils import Spec_update_model_kwargs_for_generation
     from transformers.generation.utils import GenerationMixin
     GenerationMixin._update_model_kwargs_for_generation = Spec_update_model_kwargs_for_generation
@@ -148,7 +148,7 @@ def main(args):
 
         outputs_list.append(gen_txt)
 
-        print(tokenizer.decode(outputs[0]))
+        #print(tokenizer.decode(outputs[0]))
         
         print(record.get_average_len())
 
@@ -180,19 +180,19 @@ def main(args):
 if __name__ == "__main__":
     import argparse 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", "-d", type=str, default="mt_bench")
+    parser.add_argument("--dataset", "-d", type=str, default="gsm8k")
     # dataset: mt-bench, gsm8k, alpaca, sum, vicuna-bench
     parser.add_argument("--model", "-m", type=str, default="Qwen3-8B")
     parser.add_argument("--begin", "-b", type=int, default=None)
     parser.add_argument("--end", "-e", type=int, default=None)
     parser.add_argument("--max_gen", type=int, default=500)
     parser.add_argument("--temperature", "-t", type=float, default=0.000001)
-    parser.add_argument("--out_dir", type=str, default="/home/xujiaming/xujiaming/jiaoyifan/benchmark_temp")
+    parser.add_argument("--out_dir", type=str, default="/home/xujiaming/xujiaming/jiaoyifan/gtr_post_train/tmp")
 
     #parser.add_argument("--adaptor_dir",type=str,default = "/home/xujiaming/xujiaming/jiaoyifan/gtr_post_train/SpecMoD/final_model/adaptor/8B")
 
     parser.add_argument("--use_backbone",default = False)
-    parser.add_argument("--backbone_dir", type=str, default ="/home/xujiaming/xujiaming/jiaoyifan/gtr_post_train/SpecMoD/checkpoint/backbone/backbone_1.pt")
+    parser.add_argument("--backbone_dir", type=str, default ="/home/xujiaming/xujiaming/jiaoyifan/gtr_post_train/SpecMoD/checkpoint/backbone_only/backbone_final_1.pt")
 
     parser.add_argument("--write_record", default = False)
     parser.add_argument("--enable_thinking",default = False)
