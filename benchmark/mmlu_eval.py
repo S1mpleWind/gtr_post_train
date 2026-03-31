@@ -159,7 +159,7 @@ def load_eval_split(sample_input_file, dataset_name, subset, split):
 
 def main():
     parser = argparse.ArgumentParser(description="MMLU eval with chat template.")
-    parser.add_argument("-c", "--checkpoint-path", type=str, default="/share/public/public_models/Qwen3-8B")
+    parser.add_argument("-c", "--checkpoint-path", type=str, default="/share/public/public_models/Llama-3.1-8B-Instruct")
     parser.add_argument("-f", "--sample-input-file", type=str, default=None)
     parser.add_argument("-o", "--sample-output-file", type=str, default="mmlu_res.jsonl")
     parser.add_argument("--dataset-name", type=str, default="cais/mmlu")
@@ -270,7 +270,7 @@ def main():
             if i % 20 == 0:
                 print(f"[{time.strftime('%H:%M:%S')}] processed {i}/{total}")
 
-            if i % 1200 == 0:
+            if i % 2000 == 0:
                 break #? 1.4w 太多了
 
         except Exception as e:

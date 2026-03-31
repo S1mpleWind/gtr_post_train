@@ -1,11 +1,11 @@
 #!/bin/bash
 # 串行推理 + 并行评测（每个adaptor/backbone组合独立目录）
 
-GPU="6"
+GPU="7"
 export CUDA_VISIBLE_DEVICES="$GPU"
 
 BEGIN=0
-END=80
+END=20
 MAX_GEN=512
 JUDGE_TEMPLATE="/home/xujiaming/xujiaming/jiaoyifan/gtr_post_train/benchmark/judge.txt"
 set -euo pipefail
@@ -19,8 +19,9 @@ COMBOS=(
   #"$SPECMOD_DIR/checkpoint/adaptor_with_backbone_forced_1 $SPECMOD_DIR/checkpoint/backbone_forced/backbone_final_1.pt True"
   #"$SPECMOD_DIR/checkpoint/adaptor_with_backbone_forced_2 $SPECMOD_DIR/checkpoint/backbone_forced/backbone_final_2.pt True"
   #"$SPECMOD_DIR/checkpoint/adaptor_with_full_backbone $SPECMOD_DIR/checkpoint/backbone_forced/backbone_final_1.pt True"
-  #"$SPECMOD_DIR/checkpoint/adaptor_with_full_backbone $SPECMOD_DIR/checkpoint/backbone_only/backbone_final.pt True"
-  "none $SPECMOD_DIR/checkpoint/backbone_only/backbone_final_2.pt True"
+  "/home/xujiaming/xujiaming/models/llama_adaptor $SPECMOD_DIR/checkpoint/llama_backbone_v3/backbone_final.pt False"
+  # "none $SPECMOD_DIR/checkpoint/backbone_only/backbone_final_2.pt True"
+  
 )
 
 run_judge_with_infinite_retry() {
@@ -85,10 +86,11 @@ for combo in "${COMBOS[@]}"; do
       echo "[Inference] $DATASET 已存在，跳过"
     else
       echo "[Inference] $DATASET"
-      python "$SPECMOD_DIR/inference_w_global_router_temp.py" \
+      python "$SPECMOD_DIR/inference_w_adaptor_w_global_router_llama.py" \
         -d "$DATASET" \
         --use_backbone "$USE_BACKBONE" \
         --backbone_dir "$BACKBONE_DIR" \
+        --adaptor_dir "$ADAPTOR_DIR"\
         -b "$BEGIN" \
         -e "$END" \
         --max_gen "$MAX_GEN" \

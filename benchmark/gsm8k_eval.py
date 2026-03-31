@@ -134,10 +134,10 @@ def load_test_split(sample_input_file):
 
 def main():
     parser = argparse.ArgumentParser(description="GSM8K eval with robust decoding for Qwen.")
-    parser.add_argument("-c", "--checkpoint-path", type=str, default="/share/public/public_models/Qwen3-8B")
+    parser.add_argument("-c", "--checkpoint-path", type=str, default="/share/public/public_models/Llama-3.1-8B-Instruct")
     parser.add_argument("-f", "--sample-input-file", type=str, default=None)
     parser.add_argument("-o", "--sample-output-file", type=str, default="gsm8k_res.jsonl")
-    parser.add_argument("--max-new-tokens", type=int, default=512)
+    parser.add_argument("--max-new-tokens", type=int, default=256)
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
 
@@ -187,6 +187,9 @@ def main():
                 },
                 {"role": "user", "content": doc["question"]},
             ]
+
+            # prompt = doc_to_text(doc, fewshot_prompt)
+            # messages = [{"role": "user", "content": prompt}]
 
             inputs = tokenizer.apply_chat_template(
                 messages,

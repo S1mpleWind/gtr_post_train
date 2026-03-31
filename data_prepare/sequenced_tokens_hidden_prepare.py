@@ -44,12 +44,12 @@ class ShareGPTDataset(Dataset):
         return self.data[idx]
 
 
-def chat_ids(tokenizer, messages, add_generation_prompt=False):
-    return tokenizer.apply_chat_template(
-        messages,
-        tokenize=True,
-        add_generation_prompt=add_generation_prompt
-    )
+# def chat_ids(tokenizer, messages, add_generation_prompt=False):
+#     return tokenizer.apply_chat_template(
+#         messages,
+#         tokenize=True,
+#         add_generation_prompt=add_generation_prompt
+#     )
 
 
 # TODO: pair the conversation
@@ -217,7 +217,7 @@ def process_conversations(model, tokenizer, dataset, args):
                     token_positions.append(int(token_pos))
 
                     # 新增：存最后一层hidden
-                    last_hidden = hidden_states[-1][0, token_pos, :].detach().cpu().tolist()
+                    last_hidden = hidden_states[-1][0, pred_pos, :].detach().cpu().tolist()
                     # 可以append到一个list里
                     token_hiddens.append(last_hidden)
 
@@ -237,7 +237,7 @@ def process_conversations(model, tokenizer, dataset, args):
                     "target_token_ids": target_token_ids,
                     "teacher_topk_ids": teacher_topk_ids,
                     "teacher_topk_logits": teacher_topk_vals,
-                    "token_hiddend": token_hiddens
+                    "token_hiddens": token_hiddens
                 }
                 fout.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
@@ -267,17 +267,17 @@ def main():
     parser.add_argument("--data_dir", 
                         type=str, 
                         default="/home/xujiaming/xujiaming/jiaoyifan/gtr_post_train/data_prepare/raw_data")
-    parser.add_argument("--num_samples", type=int, default=5000)
+    parser.add_argument("--num_samples", type=int, default=500)
     parser.add_argument("--seed", type=int, default=42)
 
-    parser.add_argument("--model_path", type=str, default="/share/public/public_models/Llama3.1-8B-Instruct")
+    parser.add_argument("--model_path", type=str, default="/share/public/public_models/Llama-3.1-8B-Instruct")
     parser.add_argument("--max_length", type=int, default=2048)
     parser.add_argument("--top_k", type=int, default=20)
 
     parser.add_argument("--system_prompt", type=str, default="")
     parser.add_argument("--output_path",
                         type=str,
-                        default = "/home/xujiaming/xujiaming/jiaoyifan/gtr_post_train/data_prepare/processed_data_llama.jsonl")
+                        default = "/home/xujiaming/xujiaming/jiaoyifan/gtr_post_train/data_prepare/processed_data_llama3.jsonl")
 
     args = parser.parse_args()
 

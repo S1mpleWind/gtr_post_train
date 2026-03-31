@@ -3,7 +3,8 @@
 eval "$(conda shell.bash hook)"
 conda activate specmod
 
-DATASETS=( "gsm8k" "alpaca" "sum" "2wikimqa" )
+#DATASETS=( "gsm8k" "alpaca" "sum" "2wikimqa" )
+DATASETS=( "gov_report" "multi_news" )
 CUDA_VISIBLE_DEVICES="3"
 export CUDA_VISIBLE_DEVICES
 set -euo pipefail

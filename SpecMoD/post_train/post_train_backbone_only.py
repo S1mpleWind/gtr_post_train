@@ -549,7 +549,7 @@ if __name__ == "__main__":
     parser.add_argument("--eagle_path", type=str,
                         default="/home/xujiaming/xujiaming/models/Qwen3-8B_eagle3")
     #parser.add_argument("--adaptor_hidden_dim", type=int, default=1024)
-    parser.add_argument("--batch_size", type=int, default=2)
+    parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--num_epochs", type=int, default=4)
     parser.add_argument("--backbone_lr", type=float, default=3e-5)
     #parser.add_argument("--adaptor_lr", type=float, default=1e-5)
@@ -559,7 +559,7 @@ if __name__ == "__main__":
     parser.add_argument("--kd_temperature", type=float, default=1)
     parser.add_argument("--ce_weight", type=float, default=0.1)
     parser.add_argument("--kd_weight", type=float, default=0.8)
-    parser.add_argument("--max_train_samples", type=int, default=1200)
+    parser.add_argument("--max_train_samples", type=int, default=1600)
     parser.add_argument("--max_distill_tokens_per_sample", type=int, default=256)
     parser.add_argument("--use_tensorboard", type=bool, default=True)
     parser.add_argument("--log_dir", type=str, default="/home/xujiaming/xujiaming/jiaoyifan/gtr_post_train/SpecMoD/runs/backbone_only")

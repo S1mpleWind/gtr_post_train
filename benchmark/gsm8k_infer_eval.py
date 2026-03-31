@@ -14,8 +14,8 @@ from transformers.generation.utils import GenerationMixin
 import sys, os
 sys.path.insert(0, os.path.abspath("/home/xujiaming/xujiaming/jiaoyifan/gtr_post_train/SpecMoD"))
 
-from model.qwen3_model_global_soft_router_pipeline import Spec_Qwen3ForCausalLM
-from model.utils import Spec_update_model_kwargs_for_generation, Global_router
+from model.llama_model_adaptor_global_router import Spec_LlamaForCausalLM
+from model.utils import Spec_update_model_kwargs_for_generation, Global_router,ShadowAdapter3
 from model.EAGLE_model import Model as SpecModel
 
 ANS_RE = re.compile(r"#### (\-?[0-9\.\,]+)")
@@ -28,7 +28,7 @@ INVALID_ANS = "[invalid]"
 # 将 datasets 的 generation mixin 指向自定义函数（跟 inference 文件一致）
 GenerationMixin._update_model_kwargs_for_generation = Spec_update_model_kwargs_for_generation
 
-def doc_to_text(doc):
+def doc_to_text(doc,fewshot_prompt):
     return (
         fewshot_prompt
         + "\nQuestion: "
@@ -109,16 +109,20 @@ def is_correct(completion, answer):
     return extract_answer(completion) == gold
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Test Qwen3 Spec pipeline on GSM8K.")
-    parser.add_argument("-c", "--checkpoint-path", type=str, default="/share/public/public_models/Qwen3-8B")
+    parser = argparse.ArgumentParser(description="Test llama Spec pipeline on GSM8K.")
+    parser.add_argument("-c", "--checkpoint-path", type=str, default="/share/public/public_models/Llama-3.1-8B-Instruct")
     parser.add_argument("-f", "--sample-input-file", type=str, default=None)
-    parser.add_argument("-o", "--sample-output-file", type=str, default="gsm8k_res_infer.jsonl")
-    parser.add_argument("--spec-model-path", type=str, default="/home/xujiaming/xujiaming/models/Qwen3-8B_eagle3")
-    parser.add_argument("--router-path", type=str, default="/home/xujiaming/xujiaming/jiaoyifan/gtr_post_train/SpecMoD/final_model/global_router/global_router_1024_Model1_non_thinking_first.pt")
-    parser.add_argument("--backbone-dir", type=str, default="/home/xujiaming/xujiaming/jiaoyifan/gtr_post_train/SpecMoD/checkpoint/backbone/backbone_1.pt")
+    parser.add_argument("-o", "--sample-output-file", type=str, default="gsm8k_res_infer_h.jsonl")
+    parser.add_argument("--spec-model-path", type=str, default="/home/xujiaming/xujiaming/models/EAGLE3-LLaMA3.1-Instruct-8B")
+    parser.add_argument("--router-path", type=str, default="/home/xujiaming/xujiaming/models/Llama3.1_8B_global_router_1024_Model1_non_thinking.pt")
+    parser.add_argument("--backbone-dir", type=str, default="/home/xujiaming/xujiaming/jiaoyifan/gtr_post_train/SpecMoD/checkpoint/llama_backbone_h1/backbone_final.pt")
+    # parser.add_argument("--backbone-dir", type=str, default="/home/xujiaming/xujiaming/models/llama_backbone/backbone_final.pt")
     parser.add_argument("--use-backbone", action="store_true")
     parser.add_argument("--max-gen", type=int, default=512)
     parser.add_argument("--temperature", type=float, default=1e-6)
+
+    parser.add_argument("--adaptor_dir",type=str,default="/home/xujiaming/xujiaming/jiaoyifan/gtr_post_train/SpecMoD/checkpoint/llama_adaptor_h1")
+    # parser.add_argument("--adaptor_dir",type=str,default="/home/xujiaming/xujiaming/models/llama_adaptor")
     args = parser.parse_args()
 
     fewshot_prompt = open("gsm8k_prompt.txt").read()
@@ -143,8 +147,8 @@ if __name__ == "__main__":
     print("Loading tokenizer ...")
     tokenizer = AutoTokenizer.from_pretrained(args.checkpoint_path, trust_remote_code=True)
 
-    print("Loading Spec Qwen3 model ...")
-    ori_model = Spec_Qwen3ForCausalLM.from_pretrained(
+    print("Loading llama model ...")
+    ori_model = Spec_LlamaForCausalLM.from_pretrained(
         args.checkpoint_path,
         #attn_implementation="flash_attention_2" if torch.cuda.is_available() else None
     )
@@ -178,6 +182,19 @@ if __name__ == "__main__":
 
     eos_token = getattr(tokenizer, "eos_token", None)
 
+    adaptor = [None, ]
+    for i in range(1, LAYERS):
+        # TODO: change the layer
+        if i == 31:
+            adaptor.append(None)
+        else:
+            layer_adaptor = ShadowAdapter3(ori_model.config.hidden_size, 1024)
+            # layer_adaptor_weight = torch.load(f"{args.adaptor_dir}/adapter_layer_{i}_1024_final.pt")
+            layer_adaptor_weight = torch.load(f"{args.adaptor_dir}/adapter_layer_{i}_1024_final.pt")
+            layer_adaptor.load_state_dict(layer_adaptor_weight)
+            layer_adaptor = layer_adaptor.half().to(ori_model.device)
+            adaptor.append(layer_adaptor)
+
     f_output = jsonlines.Writer(open(args.sample_output_file, "w", encoding="utf-8"))
     acc_res = []
 
@@ -202,9 +219,17 @@ if __name__ == "__main__":
                 return_tensors="pt",
             ).to(device)
 
+
+            # prompt = doc_to_text(doc,fewshot_prompt)
+            # messages = [{"role": "user", "content": prompt}]
+
+
+
+            # inputs = tokenizer(prompt, return_tensors="pt").to(ori_model.device)
+
             # 确保模型内部状态初始化
             try:
-                ori_model.model.input_id_init()
+                ori_model.model.input_ids = None
             except Exception:
                 # 如果没有该方法，忽略
                 pass
@@ -217,10 +242,11 @@ if __name__ == "__main__":
             outputs = ori_model.generate(
                 **inputs,
                 max_new_tokens=args.max_gen,
-                temperature=args.temperature,
+                #temperature=args.temperature,
                 router=router,
                 do_sample = False,
                 spec_model=spec_model,
+                adaptor=adaptor,
                 last_hidden_state=None
             )
 
@@ -246,8 +272,8 @@ if __name__ == "__main__":
             if (i + 1) % 10 == 0:
                 print(f"[{time.strftime('%H:%M:%S')}] processed {i + 1}")
 
-            # if (i + 1) % 100 == 0:
-            #     break
+            if (i + 1) % 800 == 0:
+                 break
 
         except Exception as e:
             print(f"Error at sample {i}: {e}", file=sys.stderr)

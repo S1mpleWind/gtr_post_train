@@ -609,8 +609,8 @@ if __name__ == "__main__":
     parser.add_argument("--eagle_path", type=str,
                         default="/home/xujiaming/xujiaming/models/Qwen3-8B_eagle3")
     parser.add_argument("--adaptor_hidden_dim", type=int, default=1024)
-    parser.add_argument("--batch_size", type=int, default=2)
-    parser.add_argument("--num_epochs", type=int, default=6)
+    parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--num_epochs", type=int, default=4)
     parser.add_argument("--backbone_lr", type=float, default=2e-5)
     parser.add_argument("--adaptor_lr", type=float, default=1e-5)
     parser.add_argument("--weight_decay", type=float, default=0.02)
@@ -639,7 +639,7 @@ if __name__ == "__main__":
     pad_token_id = tokenizer.pad_token_id
 
     scaling_config = ScalingConfig(
-        num_workers=6,
+        num_workers=4,
         use_gpu=True,
     )
 

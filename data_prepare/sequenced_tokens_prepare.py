@@ -257,17 +257,17 @@ def main():
     parser.add_argument("--data_dir", 
                         type=str, 
                         default="/home/xujiaming/xujiaming/jiaoyifan/gtr_post_train/data_prepare/raw_data")
-    parser.add_argument("--num_samples", type=int, default=10000)
+    parser.add_argument("--num_samples", type=int, default=5000)
     parser.add_argument("--seed", type=int, default=42)
 
-    parser.add_argument("--model_path", type=str, default="/share/public/public_models/Qwen3-8B")
+    parser.add_argument("--model_path", type=str, default="/share/public/public_models/Llama-3.1-8B-Instruct")
     parser.add_argument("--max_length", type=int, default=2048)
     parser.add_argument("--top_k", type=int, default=20)
 
     parser.add_argument("--system_prompt", type=str, default="")
     parser.add_argument("--output_path",
                         type=str,
-                        default = "/home/xujiaming/xujiaming/jiaoyifan/gtr_post_train/data_prepare/processed_data_long.jsonl")
+                        default = "/home/xujiaming/xujiaming/jiaoyifan/gtr_post_train/data_prepare/processed_data_llama.jsonl")
 
     args = parser.parse_args()
 

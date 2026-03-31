@@ -18,7 +18,7 @@ def load_questions(question_file: str, begin=None, end=None):
     return questions
 
 def main(args):
-    model_path = "/share/public/public_models/Qwen3-8B"
+    model_path = "/share/public/public_models/Llama-3.1-8B-Instruct"
     dataset_path = '/home/xujiaming/xujiaming/jiaoyifan/gtr_post_train/benchmark/dataset/' + args.dataset + '/question.jsonl'
     
     tokenizer = AutoTokenizer.from_pretrained(model_path)
@@ -88,6 +88,6 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", "-d", type=str, default="mt_bench")
     parser.add_argument("--begin", "-b", type=int, default=None)
     parser.add_argument("--end", "-e", type=int, default=None)
-    parser.add_argument("--max_gen", type=int, default=100)
+    parser.add_argument("--max_gen", type=int, default=500)
     args = parser.parse_args()
     main(args)
