@@ -209,6 +209,7 @@ def process_conversations(model, tokenizer, dataset, args):
 
                     # 存最后一层hidden
                     last_hidden = hidden_states[-1][0, pred_pos, :].detach().cpu().tolist()
+                    # TODO：有最后的model_norm吗
 
                     token_hiddens.append(last_hidden)
 
