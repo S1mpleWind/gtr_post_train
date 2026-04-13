@@ -93,84 +93,25 @@ python data_prepare/evaluate_data.py --data_path
 
 ---
 
-## 3. Post-Train 脚本怎么选
+## 3. Post-Train 
 
-### 3.1 Qwen 路线（`post_train/`）
-
-#### 1) 只训 adaptor（推荐起步）
-
-- 单卡：`post_train/post_train_adaptor_para.py`
-- DDP：`post_train/post_train_adaptor_para_ddp.py`
-
-适用：
-
-- 快速验证数据与 loss 是否正常
-- 显存和训练稳定性优先
-
-#### 2) adaptor + backbone 一起训
-
-- 单卡：`post_train/post_training_backbone_adaptor.py`
-- DDP：`post_train/post_training_backbone_adaptor_ddp.py`
-
-适用：
-
-- 需要更高上限
-- 愿意承担更高算力和调参成本
-
-#### 3) backbone-only
-
-- `post_train/post_train_backbone_only.py`
-- `post_train/post_train_backbone_only copy.py`（实验分支版本）
-
-#### 4) Ray + DeepSpeed 全量/大规模
-
-- `post_train/post_train_backbone_full.py`
-
-#### 5) baseline 评估
-
-- `post_train/baseline_ce.py`
-
-用于计算基础 CE 参考值，便于对比训练收益。
-
-### 3.2 Llama 路线（`post_train_llama/`）
+### 3.1 以 Llama 为例（`post_train_llama/`）
 
 - `post_train_llama/post_train_backbone_full.py`
+	- 训练adaptor + full—backbone
 - `post_train_llama/post_train_backbone_only.py`
-- `post_train_llama/post_train_backbone_hidden.py`（包含 hidden loss）
+	- 不使用adaptot只训练backbone
+- `post_train_llama/post_train_backbone_hidden.py`
+	- adaptor + backbone ， 同时包含 hidden loss
 
----
 
-## 4. 常见训练参数说明
+### 3.2 对应改动的pipeline
+- 修改的pipeline
+ - `SpecMoD/model/llama_model_adaptor_global_soft_router.py`
+ - `SpecMoD/model/qwen3_model_adaptor_global_soft_router_pipeline.py`
 
-这些参数在多数脚本中含义一致：
-
-- `--train_data_path`：data_prepare 产出的训练 jsonl
-- `--router_path`：router 权重路径
-- `--eagle_path`：spec model / eagle 模型路径
-- `--batch_size`：单卡 batch
-- `--max_length`：样本最大长度（会裁剪）
-- `--kd_temperature`：KD 温度
-- `--ce_weight` / `--kd_weight`：loss 权重
-- `--max_distill_tokens_per_sample`：每样本最多参与蒸馏的 token 数
-- `--save_dir`：adaptor 保存目录
-- `--save_backbone_dir`：backbone 保存目录（如脚本支持）
-
----
-
-## 5. 最小可跑流程（建议）
-
-1. 先用 `sequenced_tokens_prepare.py` 生成小规模数据（例如 `--num_samples 500`）
-2. 跑 `post_train/post_train_adaptor_para.py`（单卡 adaptor-only）
-3. 确认 loss 正常下降后，再切到 DDP 或 Ray+DeepSpeed 版本
-4. 若需要 hidden 对齐，再改用 `sequenced_tokens_hidden_prepare.py` + 对应 hidden 训练脚本
-
----
-
-## 6. 注意事项
-
-- 建议先在小数据集上检查：
-	- 数据字段完整性
-	- loss 是否为有限值
-	- 梯度是否异常爆炸
-- DDP / DeepSpeed 脚本的 `batch_size` 通常是单卡 batch，实际总 batch 会乘以卡数。
-- 某些脚本是实验版本，参数默认值偏研究用途，建议按你当前机器资源重设。
+- 新增的
+ - `SpecMoD/model/llama_model_global_router.py`
+ - `SpecMoD/model/llama_model_global_soft_router.py`
+ - `SpecMoD/model/qwen3_model_global_router_pipeline.py`
+ - `SpecMoD/model/qwen3_model_global_soft_router_pipeline.py`
