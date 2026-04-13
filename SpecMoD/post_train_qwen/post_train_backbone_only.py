@@ -1,6 +1,6 @@
 """
 使用 Ray + DeepSpeed ZeRO Stage 2 多卡训练
-微调 adaptor 以及 backbone 所有层的参数
+微调 backbone 所有层的参数
 """
 
 import sys

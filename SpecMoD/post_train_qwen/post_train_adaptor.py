@@ -162,45 +162,6 @@ def _sample_distill_targets_for_batch(batch, attention_mask, max_distill_tokens_
     return sampled_pos_batch, sampled_tgt_batch, sampled_tk_ids_batch, sampled_tk_logits_batch
 
 
-# def _collect_decode_logits_for_positions_batch(
-#     model,
-#     spec_model,
-#     adaptors,
-#     router,
-#     input_ids_2d: torch.Tensor,
-#     attention_mask_2d: torch.Tensor,
-#     positions_need_batch: list,
-# ):
-#     """
-#     一次性前向，返回每个样本每个位置的 logits：
-#     out_map_batch[b][p] = logits[b, p-1]，用于监督第 p 个 token
-#     """
-#     B, L = input_ids_2d.shape
-#     out_map_batch = [{} for _ in range(B)]
-
-#     model.model.input_id_init()
-#     spec_model.reset_kv()
-
-#     outputs = model(
-#         input_ids=input_ids_2d,
-#         attention_mask=attention_mask_2d,
-#         use_cache=False,
-#         adaptor=adaptors,
-#         router=router,
-#         spec_model=spec_model,
-#         last_hidden_state=None,
-#         output_hidden_states=False,
-#     )
-
-#     logits = outputs.logits.float()  # [B, L, V]
-
-#     for b in range(B):
-#         valid_len = int(attention_mask_2d[b].sum().item())
-#         pos_set = set(int(p) for p in positions_need_batch[b] if 0 < int(p) < valid_len)
-#         for p in pos_set:
-#             out_map_batch[b][p] = logits[b, p - 1]
-
-#     return out_map_batch
 def _collect_decode_logits_for_positions_batch(
     model,
     spec_model,

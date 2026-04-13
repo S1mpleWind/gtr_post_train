@@ -34,7 +34,7 @@ import deepspeed
 class CombinedModel(nn.Module):
     """
     把 backbone 和所有 adaptor 包装成一个 nn.Module，
-    使 DeepSpeed 能建立完整的参数映射表，避免 ZeRO 初始化时 KeyError。
+    使 DeepSpeed 能建立完整的参数映射表，避免 ZeRO 初始化时 KeyError
     """
     def __init__(self, backbone, adaptors):
         super().__init__()
@@ -312,8 +312,8 @@ def train_func(config):
     for p in router.parameters():
         p.requires_grad = False
 
-    # ── 构建 adaptors 列表 ────────────────────────────────────────────────────
-    adaptors = [None]   # index 0 占位
+    # 构建 adaptors 列表 
+    adaptors = [None]   
     for i in range(1, LAYERS):
         if i == 34:
             adaptors.append(None)
@@ -341,7 +341,7 @@ def train_func(config):
     # all_params 仅用于梯度统计，不传给 optimizer
     all_params = adaptor_params + backbone_params
 
-    # ── 用 CombinedModel 包装，让 DeepSpeed 能感知所有参数 ────────────────────
+    # 用 CombinedModel 包装，让 DeepSpeed 能感知所有参数 
     combined_model = CombinedModel(ori_model, adaptors)
 
     optimizer = optim.AdamW(
@@ -353,7 +353,7 @@ def train_func(config):
         eps=1e-4,
     )
 
-    # ── DeepSpeed ZeRO Stage 2 配置 ──────────────────────────────────────────
+    # DeepSpeed ZeRO Stage 2 配置 
     ds_config = {
         "train_batch_size": config["batch_size"] * world_size,
         "train_micro_batch_size_per_gpu": config["batch_size"],
@@ -515,45 +515,6 @@ def train_func(config):
                     f"grad_pre={grad_pre:.6f} grad_param_cnt={grad_param_cnt}"
                 )
 
-            # if grad_pre > 1000 or not torch.isfinite(torch.tensor(grad_pre)):
-            #     if config["printWarn"] and is_main_process:
-            #         print(f"[CRITICAL] Grad too high ({grad_pre:.2f}), rejecting batch.")
-            #     ds_engine.zero_grad()
-            #     continue
-
-            # bad_grad = any(
-            #     (p.grad is not None) and (not torch.isfinite(p.grad).all())
-            #     for p in all_params
-            # )
-            # if bad_grad:
-            #     if config["printWarn"] and is_main_process:
-            #         print("[WARN] non-finite grad, skip step")
-            #     ds_engine.zero_grad()
-            #     ds_engine.step() #TODO
-            #     continue
-
-            # bad_grad = any(
-            #     (p.grad is not None) and (not torch.isfinite(p.grad).all())
-            #     for p in all_params
-            # )
-            # local_reject_after_backward = (
-            #     (grad_pre > 1000)
-            #     or (not torch.isfinite(torch.tensor(grad_pre, device=device)))
-            #     or bad_grad
-            # )
-
-            # if _sync_any_true(local_reject_after_backward):
-            #     if config["printWarn"] and is_main_process:
-            #         print(
-            #             f"[WARN] reject batch after backward: "
-            #             f"grad_pre={grad_pre:.6f}, bad_grad={bad_grad}"
-            #         )
-            #     # backward 已发生，所有 rank 必须走 zero_grad + step 保持 DeepSpeed 状态一致
-            #     ds_engine.zero_grad()
-            #     ds_engine.step()
-            #     continue
-
-            # ds_engine.step() 内置 gradient_clipping=0.9（在 ds_config 里已配置）
             ds_engine.step()
 
             total_loss = batch_loss.item()
@@ -581,7 +542,7 @@ def train_func(config):
         if is_main_process:
             print(f"\nEpoch {epoch+1} 完成")
 
-    # ── 保存（只在主进程） ────────────────────────────────────────────────────
+    # 只在主进程保存
     if is_main_process:
         os.makedirs(config["save_dir"], exist_ok=True)
         os.makedirs(config["save_backbone_dir"], exist_ok=True)

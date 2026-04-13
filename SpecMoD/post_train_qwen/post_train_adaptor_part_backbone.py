@@ -315,15 +315,6 @@ def train_adaptors_end_to_end(args):
         ),
     )
 
-    # total_steps = len(train_loader) * args.num_epochs
-    # num_warmup_steps = int(0.06 * total_steps) 
-
-
-    # scheduler = get_linear_schedule_with_warmup(
-    #     optimizer, 
-    #     num_warmup_steps=num_warmup_steps, 
-    #     num_training_steps=total_steps
-    # )
 
     global_step = 0
     for epoch in range(args.num_epochs):

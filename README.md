@@ -14,8 +14,9 @@
 	- `sequenced_tokens_hidden_prepare.py`：在上面基础上，额外保存 teacher hidden states
 	- `evaluate_data.py`：统计生成数据的长度分布
 
-- `post_train/`（Qwen 方向）
-	- adaptor-only、adaptor+backbone、backbone-only、单卡/DDP/Ray+DeepSpeed 脚本
+- `post_train_qwen/`（Qwen 方向）
+	- adaptor-only、adaptor+part backbone、backbone-only的单卡/DDP脚本
+	- adaptor+full backbone Ray+DeepSpeed 脚本
 
 - `post_train_llama/`（Llama 方向）
 	- 与 Qwen 类似的训练入口，包含 hidden loss 版本
