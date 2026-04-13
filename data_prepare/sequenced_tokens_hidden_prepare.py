@@ -207,9 +207,9 @@ def process_conversations(model, tokenizer, dataset, args):
                     target_token_ids.append(int(input_ids[0, token_pos].item()))
                     token_positions.append(int(token_pos))
 
-                    # 新增：存最后一层hidden
+                    # 存最后一层hidden
                     last_hidden = hidden_states[-1][0, pred_pos, :].detach().cpu().tolist()
-                    # 可以append到一个list里
+
                     token_hiddens.append(last_hidden)
 
                 if len(token_positions) == 0:
