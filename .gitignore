@@ -1,0 +1,72 @@
+===== Core: ignore all JSON-like data =====
+*.json
+*.jsonl
+
+===== Common non-code files =====
+*.txt
+*.log
+*.out
+*.err
+*.csv
+*.tsv
+*.parquet
+*.feather
+*.pkl
+*.pickle
+*.npy
+*.npz
+
+===== Model / checkpoint / weights =====
+*.pt
+*.pth
+*.ckpt
+*.bin
+*.safetensors
+*.onnx
+*.h5
+
+===== Archives =====
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.gz
+
+===== Python cache / env / build =====
+pycache/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+dist/
+build/
+*.egg-info/
+
+===== Notebook / editor / OS =====
+.ipynb_checkpoints/
+.vscode/
+.idea/
+.DS_Store
+
+===== Experiment outputs (common names) =====
+logs/
+log/
+output/
+outputs/
+result/
+results/
+checkpoint/
+checkpoints/
+ckpt/
+wandb/
+runs/
+tmp/
+temp/
+cache/
+
+====other-code
+human-eval/
+
