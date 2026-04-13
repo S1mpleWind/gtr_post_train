@@ -753,6 +753,7 @@ if __name__ == "__main__":
     parser.add_argument("--hidden_loss_type", type=str, default="cosine",
                     choices=["norm_mse", "cosine"])
     parser.add_argument("--hidden_norm_eps", type=float, default=1e-6)
+    
 
     parser.add_argument("--max_train_samples", type=int, default=1200)
     parser.add_argument("--max_distill_tokens_per_sample", type=int, default=64)
