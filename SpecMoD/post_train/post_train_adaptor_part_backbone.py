@@ -228,10 +228,9 @@ def train_adaptors_end_to_end(args):
         param.requires_grad = False
     
     # 2. 解冻：只解冻forced_layer
-    num_layers = ori_model.config.num_hidden_layers
-    n_tune = 4
+    # num_layers = ori_model.config.num_hidden_layers
+    # n_tune = 4
     for name, param in ori_model.named_parameters():
-        # 如果你想微调最后 n_tune 层，检查 name 是否在这几层内
         if any([f"layers.{j}." in name for j in [0,1,34,35]]):
             if "norm" not in name and "emb" not in name and "lm" not in name: 
                 param.requires_grad = True

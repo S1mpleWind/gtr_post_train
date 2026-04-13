@@ -1,9 +1,9 @@
-# SpecMoD
+# Readme
 
-本 README 主要说明两件事：
+本 README 主要说明两部分代码
 
-1. 如何准备 post-train 需要的 token-level 蒸馏数据（data_prepare）
-2. 如何选择并运行不同的 post-train 训练脚本（post_train）
+1. 准备 post-train 需要的 token-level 蒸馏数据（data_prepare）
+2. post-train 训练脚本
 
 ---
 
@@ -87,7 +87,7 @@ python data_prepare/sequenced_tokens_hidden_prepare.py \
 #### C. 检查数据长度分布
 
 ```bash
-python data_prepare/evaluate_data.py
+python data_prepare/evaluate_data.py --data_path
 ```
 
 ---
