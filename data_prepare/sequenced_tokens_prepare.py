@@ -140,9 +140,8 @@ def process_conversations(model, tokenizer, dataset, args):
 
             history_msgs = [{"role": "system", "content": args.system_prompt}] if args.system_prompt else []
 
-            # 【新增】记录当前对话的全局截断起点（只计算一次）
-            global_cut_offset = 0
-            first_turn_computed_cut = False
+            # global_cut_offset = 0
+            # first_turn_computed_cut = False
 
             for turn_idx, (user_text, assistant_text) in enumerate(turn_pairs):
                 context_msgs = history_msgs + [{"role": "user", "content": user_text}]
@@ -165,18 +164,24 @@ def process_conversations(model, tokenizer, dataset, args):
                         {"role": "user", "content": user_text},
                         {"role": "assistant", "content": assistant_text},
                     ])
-                    continue
+                    raise ValueError(f"答案起点超出输入长度: conv={conv_id} turn={turn_idx+1} ans_start={ans_start} full_len={len(full_ids)}")
+                    # continue
 
-                # 【关键修复】只在第一个 turn 计算截断偏移
-                if not first_turn_computed_cut:
-                    if len(full_ids) > args.max_length:
-                        global_cut_offset = len(full_ids) - args.max_length
-                    first_turn_computed_cut = True
 
-                # 【关键】所有 turns 使用相同的截断起点
-                if global_cut_offset > 0:
-                    full_ids = full_ids[global_cut_offset:]
-                    ans_start = max(0, ans_start - global_cut_offset)
+                # 局部计算窗口
+                current_len = len(full_ids)
+                if current_len > args.max_length:
+                    cut_num = current_len - args.max_length
+                    full_ids = full_ids[cut_num:]
+                    
+                    # 同步修正 assistant 的起始索引
+                    ans_start = max(0, ans_start - cut_num)
+                    
+                    #如果 ans_start 被裁到了 0，说明这一轮已经没有完整的 Prompt
+                    if ans_start == 0:
+                        # print(f"[DEBUG] Skip turn because prompt is fully truncated.")
+                        continue
+
 
                 input_ids = torch.tensor(full_ids, dtype=torch.long, device=model.device).unsqueeze(0)
                 attn = torch.ones_like(input_ids, device=model.device)

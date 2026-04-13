@@ -44,14 +44,6 @@ class ShareGPTDataset(Dataset):
         return self.data[idx]
 
 
-# def chat_ids(tokenizer, messages, add_generation_prompt=False):
-#     return tokenizer.apply_chat_template(
-#         messages,
-#         tokenize=True,
-#         add_generation_prompt=add_generation_prompt
-#     )
-
-
 # TODO: pair the conversation
 def extract_turn_pairs(turns):
     """
@@ -101,7 +93,7 @@ def chat_ids(tokenizer, messages, add_generation_prompt=False):
         return_tensors=None     #? Key: python list
     )
 
-    # 兼容兜底
+    # 兼容
     if isinstance(ids, dict):
         ids = ids["input_ids"]
     if torch.is_tensor(ids):
@@ -140,10 +132,6 @@ def process_conversations(model, tokenizer, dataset, args):
 
             history_msgs = [{"role": "system", "content": args.system_prompt}] if args.system_prompt else []
 
-            # 【新增】记录当前对话的全局截断起点（只计算一次）
-            global_cut_offset = 0
-            first_turn_computed_cut = False
-
             for turn_idx, (user_text, assistant_text) in enumerate(turn_pairs):
                 context_msgs = history_msgs + [{"role": "user", "content": user_text}]
                 full_msgs = context_msgs + [{"role": "assistant", "content": assistant_text}]
@@ -167,16 +155,19 @@ def process_conversations(model, tokenizer, dataset, args):
                     ])
                     continue
 
-                # 只在第一个 turn 计算截断偏移
-                if not first_turn_computed_cut:
-                    if len(full_ids) > args.max_length:
-                        global_cut_offset = len(full_ids) - args.max_length
-                    first_turn_computed_cut = True
-
-                #  所有 turns 使用相同的截断起点
-                if global_cut_offset > 0:
-                    full_ids = full_ids[global_cut_offset:]
-                    ans_start = max(0, ans_start - global_cut_offset)
+                # 局部计算窗口
+                current_len = len(full_ids)
+                if current_len > args.max_length:
+                    cut_num = current_len - args.max_length
+                    full_ids = full_ids[cut_num:]
+                    
+                    # 同步修正 assistant 的起始索引
+                    ans_start = max(0, ans_start - cut_num)
+                    
+                    #如果 ans_start 被裁到了 0，说明这一轮已经没有完整的 Prompt
+                    if ans_start == 0:
+                        # print(f"[DEBUG] Skip turn because prompt is fully truncated.")
+                        continue
 
                 input_ids = torch.tensor(full_ids, dtype=torch.long, device=model.device).unsqueeze(0)
                 attn = torch.ones_like(input_ids, device=model.device)
@@ -258,7 +249,6 @@ def process_conversations(model, tokenizer, dataset, args):
     )
     print(f"输出: {args.output_path}")
 
-# ...existing code...
 
 def main():
     import argparse
