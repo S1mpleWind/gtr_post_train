@@ -1,8 +1,6 @@
 """
 使用 Ray + DeepSpeed ZeRO Stage 2 多卡训练
 微调 adaptor 以及 backbone 所有层的参数
-在此基础上加入了 router 的更新
-使用了更多样的loss
 """
 
 import sys
