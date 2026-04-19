@@ -464,6 +464,7 @@ class LlamaModel(LlamaPreTrainedModel):
             for layer in range(1, self.config.num_hidden_layers+1):
                 # print(f"Layer {layer} dynamic programming:")
                 for budget in range(1, layer):
+                    #TODO: deepcopy kvcache
                     past_key_values_copy = copy.deepcopy(past_key_values_back)
                     # print(f"Budget {budget}:")pa
                     # execute this layer
