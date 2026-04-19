@@ -10,6 +10,8 @@ import os
 import json
 import random
 
+from typing import Optional
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -65,7 +67,7 @@ class AdaptorTrainDataset(Dataset):
         return self.data[idx]
 
 
-def collate_fn(batch, pad_token_id: int, max_length: int):
+def collate_fn(batch, pad_token_id: int, max_length: int, ):
     """
     """
     proc = []
@@ -128,6 +130,7 @@ def collate_fn(batch, pad_token_id: int, max_length: int):
 def _collect_decode_logits_and_hidden_for_positions_batch(
     model, spec_model, adaptors, router,
     input_ids_2d: torch.Tensor, attention_mask_2d: torch.Tensor, positions_need_batch: list,
+    temp: Optional[float] = None
 ):
     B, L = input_ids_2d.shape
     out_logits_map_batch = [{} for _ in range(B)]
@@ -190,9 +193,23 @@ def _collect_decode_logits_and_hidden_for_positions_batch(
         else:
             raise ValueError(f"Unexpected router output dim: {raw_gate.dim()}, shape={tuple(raw_gate.shape)}")
         
-        # TODO：add a loss here and quit useing ">" for gradient backbrop
-        gate_scores = (gate_logits > 0.0).to(dtype=emb_for_router.dtype).unsqueeze(-1).detach()
-    
+    # TODO：add a loss here and quit useing ">" for gradient backbrop
+
+    # Sigmoid + STE (recommended)
+    temp = temp if temp is not None else 1.0
+    gate_probs = torch.sigmoid(gate_logits / temp)                     # [B, layers]
+    gate_hard = (gate_probs > 0.5).to(gate_probs.dtype)                # forward hard
+    gate_scores = (gate_hard - gate_probs).detach() + gate_probs       # STE: forward uses gate_hard, backward uses gate_probs
+    gate_scores = gate_scores.unsqueeze(-1).to(dtype=emb_for_router.dtype)
+
+    #TODO Gumbel-Softmax 
+    # logits_two = torch.stack([-gate_logits, gate_logits], dim=-1)   # [B, layers, 2]
+    # g = F.gumbel_softmax(logits_two, tau=0.5, hard=True, dim=-1)    # hard=True -> one-hot forward, STE backward
+    # gate_scores = g[..., 1].unsqueeze(-1).to(dtype=emb_for_router.dtype)
+
+    # TODO: how to design the loss
+    sp_loss = gate_probs.mean() 
+       
     # llama has no attribute "input_id_init"
     if hasattr(model.model, "input_id_init"):
         model.model.input_id_init()
@@ -228,7 +245,7 @@ def _collect_decode_logits_and_hidden_for_positions_batch(
                 if last_hidden is not None:
                     out_hidden_map_batch[b][p] = last_hidden[b, p - 1]  # [hidden_size]
     
-    return out_logits_map_batch, out_hidden_map_batch
+    return out_logits_map_batch, out_hidden_map_batch, sp_loss
 
 
 
@@ -341,6 +358,7 @@ def train_func(config):
             batch=batch,
             pad_token_id=config["pad_token_id"],
             max_length=config["max_length"],
+            temp=config["router_sm_temp"]
         ),
     )
 
@@ -382,11 +400,12 @@ def train_func(config):
     if os.path.isfile(config["router_path"]):
         router_weight = torch.load(config["router_path"], map_location=device)
         router.load_state_dict(router_weight)
-    router = router.bfloat16().eval()
+    router = router.bfloat16().to(device).train()
+
+    router_params = list(router.parameters())
     #router = router.float().eval()
 
-    for p in router.parameters():
-        p.requires_grad = False
+
 
     # ── 构建 adaptors 列表 ────────────────────────────────────────────────────
     adaptors = [None]   # index 0 占位
@@ -418,12 +437,13 @@ def train_func(config):
     all_params = adaptor_params + backbone_params
 
     # ── 用 CombinedModel 包装，让 DeepSpeed 能感知所有参数 ────────────────────
-    combined_model = CombinedModel(ori_model, adaptors)
+    combined_model = CombinedModel(ori_model, adaptor, router)
 
     optimizer = optim.AdamW(
         [
             {"params": adaptor_params, "lr": config["adaptor_lr"]},
             {"params": backbone_params, "lr": config["backbone_lr"]},
+            {"params": router_params, "lr": config["router_lr"]},
         ],
         weight_decay=config["weight_decay"],
         eps=1e-4,
@@ -490,7 +510,7 @@ def train_func(config):
                 continue
 
             # 获取logits和隐藏状态
-            logits_map_batch, hidden_map_batch = _collect_decode_logits_and_hidden_for_positions_batch(
+            logits_map_batch, hidden_map_batch, sp_loss = _collect_decode_logits_and_hidden_for_positions_batch(
                 model=backbone, 
                 spec_model=spec_model,
                 adaptors=adaptors,
@@ -609,6 +629,10 @@ def train_func(config):
                 loss_parts.append(config["hidden_mse_weight"] * hidden_loss)
                 batch_hidden_sum = hidden_loss.item()
 
+            #TODO add sp_loss
+            if torch.isfinite(sp_loss):
+                loss_parts.append(config["sp_weight"] * sp_loss)
+
             batch_loss = sum(loss_parts)
 
             local_bad_loss = (not torch.isfinite(batch_loss))
@@ -696,10 +720,15 @@ if __name__ == "__main__":
     parser.add_argument("--num_epochs", type=int, default=4)
     parser.add_argument("--backbone_lr", type=float, default=4e-5)
     parser.add_argument("--adaptor_lr", type=float, default=2e-5)
+    parser.add_argument("--router_lr", type=float, default=1e-5)
     parser.add_argument("--weight_decay", type=float, default=0.02)
+
+    parser.add_argument("--router_sm_temp", type=float, default=1.0)
 
     parser.add_argument("--max_length", type=int, default=256)
     parser.add_argument("--kd_temperature", type=float, default=1)
+
+    parser.add_argument("--sp_weight", type=float, default=0.1)
     parser.add_argument("--ce_weight", type=float, default=0.03)
     parser.add_argument("--kd_weight", type=float, default=0.3)
     parser.add_argument("--hidden_mse_weight", type=float, default=2)
@@ -740,15 +769,25 @@ if __name__ == "__main__":
             "eagle_path": args.eagle_path,
             "router_path": args.router_path,
             "adaptor_hidden_dim": args.adaptor_hidden_dim,
+
             "batch_size": args.batch_size,
             "max_length": args.max_length,
+
             "backbone_lr": args.backbone_lr,
             "adaptor_lr": args.adaptor_lr,
+            "router_lr": args.router_lr,
+
+
             "weight_decay": args.weight_decay,
+            "router_sm_temp": args.router_sm_temp,
+            "kd_temperature": args.kd_temperature,
+
             "hidden_loss_type": args.hidden_loss_type,
             "hidden_norm_eps": args.hidden_norm_eps,
+
             "num_epochs": args.num_epochs,
-            "kd_temperature": args.kd_temperature,
+  
+            "sp_weight": args.sp_weight,
             "ce_weight": args.ce_weight,
             "kd_weight": args.kd_weight,
             "hidden_mse_weight": args.hidden_mse_weight,

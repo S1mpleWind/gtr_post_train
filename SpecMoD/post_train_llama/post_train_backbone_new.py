@@ -1,12 +1,16 @@
 """
 使用 Ray + DeepSpeed ZeRO Stage 2 多卡训练
 微调 adaptor 以及 backbone 所有层的参数
+在此基础上加入了 router 的更新
+使用了更多样的loss
 """
 
 import sys
 import os
 import json
 import random
+
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -20,7 +24,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from model.llama_model_adaptor_global_soft_router import Spec_LlamaForCausalLM
+from model.llama_model_adaptor_global_soft_router_new import Spec_LlamaForCausalLM
 from model.utils import ShadowAdapter3, Global_router
 from model.EAGLE_model import Model as SpecModel
 
@@ -36,9 +40,10 @@ class CombinedModel(nn.Module):
     把 backbone 和所有 adaptor 包装成一个 nn.Module，
     使 DeepSpeed 能建立完整的参数映射表，避免 ZeRO 初始化时 KeyError。
     """
-    def __init__(self, backbone, adaptors):
+    def __init__(self, backbone, adaptors,router):
         super().__init__()
         self.backbone = backbone
+        self.router = router
         for i, a in enumerate(adaptors):
             if a is not None:
                 self.add_module(f'adaptor_{i}', a)
@@ -63,7 +68,7 @@ class AdaptorTrainDataset(Dataset):
         return self.data[idx]
 
 
-def collate_fn(batch, pad_token_id: int, max_length: int):
+def collate_fn(batch, pad_token_id: int, max_length: int, ):
     """
     """
     proc = []
@@ -126,6 +131,7 @@ def collate_fn(batch, pad_token_id: int, max_length: int):
 def _collect_decode_logits_and_hidden_for_positions_batch(
     model, spec_model, adaptors, router,
     input_ids_2d: torch.Tensor, attention_mask_2d: torch.Tensor, positions_need_batch: list,
+    temp: Optional[float] = None
 ):
     B, L = input_ids_2d.shape
     out_logits_map_batch = [{} for _ in range(B)]
@@ -188,9 +194,25 @@ def _collect_decode_logits_and_hidden_for_positions_batch(
         else:
             raise ValueError(f"Unexpected router output dim: {raw_gate.dim()}, shape={tuple(raw_gate.shape)}")
         
-        # TODO：add a loss here and quit useing ">" for gradient backbrop
-        gate_scores = (gate_logits > 0.0).to(dtype=emb_for_router.dtype).unsqueeze(-1).detach()
-    
+    # TODO：add a loss here and quit useing ">" for gradient backbrop
+
+    # Sigmoid + STE (recommended)
+    temp = temp if temp is not None else 1.0
+    gate_probs = torch.sigmoid(gate_logits / temp)                     # [B, layers]
+    gate_hard = (gate_probs > 0.5).to(gate_probs.dtype)                # forward hard
+    gate_scores = (gate_hard - gate_probs).detach() + gate_probs       # STE: forward uses gate_hard, backward uses gate_probs
+    gate_scores = gate_scores.unsqueeze(-1).to(dtype=emb_for_router.dtype)
+
+    #TODO Gumbel-Softmax 
+    # logits_two = torch.stack([-gate_logits, gate_logits], dim=-1)   # [B, layers, 2]
+    # g = F.gumbel_softmax(logits_two, tau=0.5, hard=True, dim=-1)    # hard=True -> one-hot forward, STE backward
+    # gate_scores = g[..., 1].unsqueeze(-1).to(dtype=emb_for_router.dtype)
+
+    # TODO: how to design the loss
+    target_rate = 0.83
+    #sp_loss = gate_probs.mean() - 0.83 
+    sp_loss = torch.nn.functional.relu(gate_probs.mean() - target_rate)
+
     # llama has no attribute "input_id_init"
     if hasattr(model.model, "input_id_init"):
         model.model.input_id_init()
@@ -226,7 +248,7 @@ def _collect_decode_logits_and_hidden_for_positions_batch(
                 if last_hidden is not None:
                     out_hidden_map_batch[b][p] = last_hidden[b, p - 1]  # [hidden_size]
     
-    return out_logits_map_batch, out_hidden_map_batch
+    return out_logits_map_batch, out_hidden_map_batch, sp_loss
 
 
 
@@ -268,15 +290,26 @@ def _sample_distill_targets_for_batch(batch, attention_mask, max_distill_tokens_
     return sampled_pos_batch, sampled_tgt_batch, sampled_tk_ids_batch, sampled_tk_logits_batch
 
 
-def _compute_hidden_loss(student_hidden, teacher_hidden_tensor, loss_type="norm_mse", eps=1e-6):
+def _compute_hidden_loss(student_hidden, teacher_hidden_tensor, loss_type="mse", eps=1e-6, global_step:Optional[int]=None):
     # 统一用 float32 计算，避免 bf16 精度损失影响 loss 稳定性
     s = student_hidden.float()
     t = teacher_hidden_tensor.float()
 
-    if loss_type == "norm_mse":
-        s = F.normalize(s, p=2, dim=-1, eps=eps)
-        t = F.normalize(t, p=2, dim=-1, eps=eps)
-        return F.mse_loss(s, t)
+    # 第一阶段：使用 Cosine 对齐方向
+    # switch_step = 1000 #TODO: set manually
+    # if global_step < switch_step:
+    #     # F.cosine_similarity 内部会自动处理 norm
+    #     return 1.0 - F.cosine_similarity(s, t, dim=-1)
+    
+    # # 第二阶段：使用 MSE 精细对齐数值
+    # else:
+    #     # 此时方向已稳，可以直接对齐原始数值
+    #     return F.mse_loss(s, t)
+
+    #TODO: 
+    if loss_type == "mse":
+        # use smooth L1 instead
+        return F.soft_margin_loss(s, t) # 或者 F.smooth_l1_loss(s, t)
 
     if loss_type == "cosine":
         s = F.normalize(s, p=2, dim=-1, eps=eps)
@@ -339,6 +372,7 @@ def train_func(config):
             batch=batch,
             pad_token_id=config["pad_token_id"],
             max_length=config["max_length"],
+            #temp=config["router_sm_temp"]
         ),
     )
 
@@ -380,11 +414,12 @@ def train_func(config):
     if os.path.isfile(config["router_path"]):
         router_weight = torch.load(config["router_path"], map_location=device)
         router.load_state_dict(router_weight)
-    router = router.bfloat16().eval()
+    router = router.bfloat16().to(device).train()
+
+    router_params = list(router.parameters())
     #router = router.float().eval()
 
-    for p in router.parameters():
-        p.requires_grad = False
+
 
     # ── 构建 adaptors 列表 ────────────────────────────────────────────────────
     adaptors = [None]   # index 0 占位
@@ -416,12 +451,13 @@ def train_func(config):
     all_params = adaptor_params + backbone_params
 
     # ── 用 CombinedModel 包装，让 DeepSpeed 能感知所有参数 ────────────────────
-    combined_model = CombinedModel(ori_model, adaptors)
+    combined_model = CombinedModel(ori_model, adaptors, router)
 
     optimizer = optim.AdamW(
         [
             {"params": adaptor_params, "lr": config["adaptor_lr"]},
             {"params": backbone_params, "lr": config["backbone_lr"]},
+            {"params": router_params, "lr": config["router_lr"]},
         ],
         weight_decay=config["weight_decay"],
         eps=1e-4,
@@ -488,7 +524,7 @@ def train_func(config):
                 continue
 
             # 获取logits和隐藏状态
-            logits_map_batch, hidden_map_batch = _collect_decode_logits_and_hidden_for_positions_batch(
+            logits_map_batch, hidden_map_batch, sp_loss = _collect_decode_logits_and_hidden_for_positions_batch(
                 model=backbone, 
                 spec_model=spec_model,
                 adaptors=adaptors,
@@ -496,6 +532,7 @@ def train_func(config):
                 input_ids_2d=input_ids,
                 attention_mask_2d=attention_mask,
                 positions_need_batch=sampled_pos_batch,
+                temp=config["router_sm_temp"],
             )
 
             # 建立原始位置到隐藏状态的映射
@@ -607,6 +644,10 @@ def train_func(config):
                 loss_parts.append(config["hidden_mse_weight"] * hidden_loss)
                 batch_hidden_sum = hidden_loss.item()
 
+            #TODO add sp_loss
+            if torch.isfinite(sp_loss):
+                loss_parts.append(config["sp_weight"] * sp_loss)
+
             batch_loss = sum(loss_parts)
 
             local_bad_loss = (not torch.isfinite(batch_loss))
@@ -645,6 +686,7 @@ def train_func(config):
                 writer.add_scalar("train/ce_step", total_ce, global_step)
                 writer.add_scalar("train/kd_step", total_kd, global_step)
                 writer.add_scalar("train/hidden_mse_step", total_hidden_mse, global_step)
+                writer.add_scalar("train/sp_step", sp_loss.item(), global_step)
                 writer.add_scalar("train/lr", optimizer.param_groups[0]["lr"], global_step)
 
             if is_main_process and hasattr(progress_bar, "set_postfix"):
@@ -655,6 +697,7 @@ def train_func(config):
                         "ce": f"{total_ce:.4f}",
                         "kd": f"{total_kd:.4f}",
                         "hidden": f"{total_hidden_mse:.3e}",
+                        "sp": f"{sp_loss.item():.4f}",
                     }
                 )
 
@@ -665,6 +708,7 @@ def train_func(config):
     if is_main_process:
         os.makedirs(config["save_dir"], exist_ok=True)
         os.makedirs(config["save_backbone_dir"], exist_ok=True)
+        os.makedirs(config["router_save_dir"], exist_ok=True)
         for i, adaptor in enumerate(adaptors):
             if adaptor is not None:
                 save_path = f"{config['save_dir']}/adapter_layer_{i}_{config['adaptor_hidden_dim']}_final.pt"
@@ -673,6 +717,12 @@ def train_func(config):
             backbone.state_dict(),
             os.path.join(config["save_backbone_dir"], "backbone_final.pt"),
         )
+
+        torch.save(
+            router.state_dict(),
+            os.path.join(config["router_save_dir"], "router.pt"),
+        )
+
         if writer is not None:
             writer.close()
         print("\n训练完成！")
@@ -690,32 +740,41 @@ if __name__ == "__main__":
     parser.add_argument("--eagle_path", type=str,
                         default="/home/xujiaming/xujiaming/models/EAGLE3-LLaMA3.1-Instruct-8B")
     parser.add_argument("--adaptor_hidden_dim", type=int, default=1024)
+
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--num_epochs", type=int, default=4)
-    parser.add_argument("--backbone_lr", type=float, default=4e-5)
-    parser.add_argument("--adaptor_lr", type=float, default=2e-5)
+
+    parser.add_argument("--backbone_lr", type=float, default=2e-5)
+    parser.add_argument("--adaptor_lr", type=float, default=1e-5)
+    parser.add_argument("--router_lr", type=float, default=1e-6)
     parser.add_argument("--weight_decay", type=float, default=0.02)
+
+    parser.add_argument("--router_sm_temp", type=float, default=1.0)
 
     parser.add_argument("--max_length", type=int, default=256)
     parser.add_argument("--kd_temperature", type=float, default=1)
+
+    parser.add_argument("--sp_weight", type=float, default=0.3)
     parser.add_argument("--ce_weight", type=float, default=0.03)
     parser.add_argument("--kd_weight", type=float, default=0.3)
-    parser.add_argument("--hidden_mse_weight", type=float, default=2)
+    parser.add_argument("--hidden_mse_weight", type=float, default=0.2)
 
     parser.add_argument("--hidden_loss_type", type=str, default="cosine",
-                    choices=["norm_mse", "cosine"])
+                    choices=["mse", "cosine"])
     parser.add_argument("--hidden_norm_eps", type=float, default=1e-6)
     
 
-    parser.add_argument("--max_train_samples", type=int, default=1200)
+    parser.add_argument("--max_train_samples", type=int, default=2400)
     parser.add_argument("--max_distill_tokens_per_sample", type=int, default=64)
     parser.add_argument("--use_tensorboard", type=bool, default=True)
-    parser.add_argument("--log_dir", type=str, default="/home/xujiaming/xujiaming/jiaoyifan/gtr_post_train/SpecMoD/runs/llama_post_train_h1")
+    parser.add_argument("--log_dir", type=str, default="/home/xujiaming/xujiaming/jiaoyifan/gtr_post_train/SpecMoD/runs/llama_post_train_n2")
     parser.add_argument("--log_interval", type=int, default=1)
     parser.add_argument("--save_dir", type=str,
-                        default="/home/xujiaming/xujiaming/jiaoyifan/gtr_post_train/SpecMoD/checkpoint/llama_adaptor_h1")
+                        default="/home/xujiaming/xujiaming/jiaoyifan/gtr_post_train/SpecMoD/checkpoint/llama_n2/adaptor")
     parser.add_argument("--save_backbone_dir", type=str,
-                        default="/home/xujiaming/xujiaming/jiaoyifan/gtr_post_train/SpecMoD/checkpoint/llama_backbone_h1")
+                        default="/home/xujiaming/xujiaming/jiaoyifan/gtr_post_train/SpecMoD/checkpoint/llama_n2/backbone")
+    parser.add_argument("--router_save_dir", type=str,
+                        default="/home/xujiaming/xujiaming/jiaoyifan/gtr_post_train/SpecMoD/checkpoint/llama_n2/router")
     parser.add_argument("--debug_grad_stats", type=bool, default=False)
     parser.add_argument("--debug_grad_interval", type=int, default=1)
     parser.add_argument("--printWarn", default=False)
@@ -738,15 +797,25 @@ if __name__ == "__main__":
             "eagle_path": args.eagle_path,
             "router_path": args.router_path,
             "adaptor_hidden_dim": args.adaptor_hidden_dim,
+
             "batch_size": args.batch_size,
             "max_length": args.max_length,
+
             "backbone_lr": args.backbone_lr,
             "adaptor_lr": args.adaptor_lr,
+            "router_lr": args.router_lr,
+
+
             "weight_decay": args.weight_decay,
+            "router_sm_temp": args.router_sm_temp,
+            "kd_temperature": args.kd_temperature,
+
             "hidden_loss_type": args.hidden_loss_type,
             "hidden_norm_eps": args.hidden_norm_eps,
+
             "num_epochs": args.num_epochs,
-            "kd_temperature": args.kd_temperature,
+  
+            "sp_weight": args.sp_weight,
             "ce_weight": args.ce_weight,
             "kd_weight": args.kd_weight,
             "hidden_mse_weight": args.hidden_mse_weight,
@@ -757,6 +826,8 @@ if __name__ == "__main__":
             "log_interval": args.log_interval,
             "save_dir": args.save_dir,
             "save_backbone_dir": args.save_backbone_dir,
+            "router_save_dir": args.router_save_dir,
+
             "debug_grad_stats": args.debug_grad_stats,
             "debug_grad_interval": args.debug_grad_interval,
             "printWarn": args.printWarn,
