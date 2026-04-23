@@ -115,3 +115,10 @@ python data_prepare/evaluate_data.py --data_path
  - `SpecMoD/model/llama_model_global_soft_router.py`
  - `SpecMoD/model/qwen3_model_global_router_pipeline.py`
  - `SpecMoD/model/qwen3_model_global_soft_router_pipeline.py`
+
+### 3.3 代码的一些逻辑
+采用**两次 prefill**来进行训练
+1. 第一次prefill获取所有的 hidden
+2. 清空 self.input_ids，准备第二次prefill； 用得到的 hidden 去计算 router 的结果 gates
+3. 通过改进的pipeline的后门，传入router的结果并用 gates 实现 prefill 的跳层
+4. 得到每个位置经过router以及adaptor干涉之后的结果，反向传播
